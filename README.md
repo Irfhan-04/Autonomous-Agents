@@ -6,7 +6,7 @@ A 60-minute-style FastAPI build that turns a natural-language document request i
 INTAKE & PLAN -> GENERATE -> REFLECT -> RENDER
 ```
 
-The LLM stages use Groq strict JSON Schema structured outputs with a single configured model (`openai/gpt-oss-20b` by default). Rendering is pure Python via `python-docx`; there is no database, no LangGraph/CrewAI, and no generated JSON schemas.
+The LLM stages use Groq strict JSON Schema structured outputs with a primary/fallback model pair — `openai/gpt-oss-120b` by default, falling back to `openai/gpt-oss-20b` if the primary model errors out or never returns valid JSON. Rendering is pure Python via `python-docx`; there is no database, no LangGraph/CrewAI, and no generated JSON schemas.
 
 ## Setup
 
@@ -21,7 +21,8 @@ uv run uvicorn agent.main:app --reload --port 8000
 
 ```env
 GROQ_API_KEY=
-GROQ_MODEL=openai/gpt-oss-20b
+GROQ_MODEL_PRIMARY=openai/gpt-oss-120b
+GROQ_MODEL_FALLBACK=openai/gpt-oss-20b
 ```
 
 ## API
@@ -65,7 +66,8 @@ curl -s -o out.docx http://localhost:8000/agent/download/<request_id>
 ## Notes
 
 - `GROQ_API_KEY` is required; startup fails immediately if it is missing.
-- `GROQ_MODEL` defaults to `openai/gpt-oss-20b`.
-- The Groq client retries malformed/empty JSON once on the same model.
+- `GROQ_MODEL_PRIMARY` defaults to `openai/gpt-oss-120b`, `GROQ_MODEL_FALLBACK` to `openai/gpt-oss-20b`.
+- Retry & fallback logic: every stage's Groq call first retries the primary model once on the same model if it returns malformed/empty JSON; if the primary model errors out (rate limit, decommissioned model ID, transient 5xx) or exhausts that retry, `call_structured` falls back once to the secondary model with the same retry policy. Only if both models fail does the pipeline raise.
+- Groq deprecated `llama-3.1-8b-instant` and `llama-3.3-70b-versatile` for free/developer-tier usage on 2026-06-17 in favor of the `gpt-oss` pair used here — see [console.groq.com/docs/deprecations](https://console.groq.com/docs/deprecations).
 - Download paths validate `request_id` as a UUID before resolving `output/{uuid}.docx`.
 - Runtime output lives in `output/`, which is gitignored.
